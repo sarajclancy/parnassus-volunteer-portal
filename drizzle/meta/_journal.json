@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1782765190161,
+      "tag": "0000_stale_dagger",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1782770659690,
+      "tag": "0001_slow_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782772143937,
+      "tag": "0002_flat_toad",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1782836692964,
+      "tag": "0003_quiet_skreet",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1782838086447,
+      "tag": "0004_lazy_silver_centurion",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1782840103956,
+      "tag": "0005_swift_scourge",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1782841201441,
+      "tag": "0006_tearful_tag",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1782843008626,
+      "tag": "0007_groovy_monster_badoon",
+      "breakpoints": true
+    }
+  ]
+}
