@@ -348,6 +348,10 @@ function signupDisplayStatus(signup: PortalEvent["positions"][number]["signup"])
     return "completed" as const;
   }
 
+  if (signup.completionRequestedAt) {
+    return "approval_requested" as const;
+  }
+
   if (signup.swapRequestedAt) {
     return "swap" as const;
   }
@@ -1328,6 +1332,27 @@ function FamilyPortal({
     onBusyChange(false);
   }
 
+  async function requestCompletion(signupId: string) {
+    onBusyChange(true);
+    onMessageChange(null);
+
+    const response = await fetch("/api/family/signups", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signupId, action: "complete" }),
+    });
+    const data = (await response.json()) as { data?: PortalData; error?: string };
+
+    if (!response.ok || !data.data) {
+      onMessageChange(data.error ?? "The completed hours could not be submitted.");
+    } else {
+      setPortal(data.data);
+      onMessageChange("Completed hours submitted for admin approval.");
+    }
+
+    onBusyChange(false);
+  }
+
   async function joinWaitlist(positionId: string) {
     onBusyChange(true);
     onMessageChange(null);
@@ -1490,6 +1515,7 @@ function FamilyPortal({
         <FamilyPendingEventsPanel
           busy={busy}
           entries={pendingPositions}
+          onRequestCompletion={requestCompletion}
           onRelease={release}
           onRequestSwap={requestSwap}
         />
@@ -1503,6 +1529,7 @@ function FamilyPortal({
           onJoinWaitlist={joinWaitlist}
           onLeaveWaitlist={leaveWaitlist}
           policySigned={policySigned}
+          onRequestCompletion={requestCompletion}
           onRelease={release}
           onRequestSwap={requestSwap}
         />
@@ -1578,16 +1605,6 @@ function AdminToolsPanel({ portal }: { portal: PortalData }) {
         >
           Export event rosters
         </button>
-      </div>
-      <div className="mt-4 rounded-md border border-[#eee4d0] bg-[#fffaf0] p-3">
-        <p className="text-sm font-semibold text-[#26385f]">Reminder Queue</p>
-        <div className="mt-2 space-y-2 text-sm text-[#6f664f]">
-          {portal.events.slice(0, 5).map((event) => (
-            <p key={event.id}>
-              {event.title}: {event.reminderDays.join(", ")} days before
-            </p>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -2453,11 +2470,13 @@ function FamilyCompletedEventsPanel({
 function FamilyPendingEventsPanel({
   busy,
   entries,
+  onRequestCompletion,
   onRelease,
   onRequestSwap,
 }: {
   busy: boolean;
   entries: ReturnType<typeof collectPositions>;
+  onRequestCompletion: (signupId: string) => void;
   onRelease: (signupId: string) => void;
   onRequestSwap: (signupId: string) => void;
 }) {
@@ -2488,12 +2507,16 @@ function FamilyPendingEventsPanel({
                 <p className="mt-1 text-sm text-[#26385f]">{position.title}</p>
                 <p className="mt-1 text-sm text-[#6f664f]">
                   {formatDateRange(event.date, event.endDate)} ·{" "}
-                  {formatHours(position.hours)} hours pending
+                  {formatHours(position.hours)} hours{" "}
+                  {position.signup?.completionRequestedAt
+                    ? "submitted for approval"
+                    : "pending completion"}
                 </p>
               </div>
               <PositionAction
                 busy={busy}
                 mode="family"
+                onRequestCompletion={onRequestCompletion}
                 onRelease={onRelease}
                 onRequestSwap={onRequestSwap}
                 position={position}
@@ -2984,7 +3007,7 @@ function EventForm({
             value={draft.hours}
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 md:grid-cols-3">
           <TextInput
             label="Start"
             onChange={(value) => updateDraft("startTime", value)}
@@ -2997,59 +3020,48 @@ function EventForm({
             type="time"
             value={draft.endTime}
           />
+          <TextInput
+            label="Location"
+            onChange={(value) => updateDraft("location", value)}
+            value={draft.location}
+          />
         </div>
-        <TextInput
-          label="Location"
-          onChange={(value) => updateDraft("location", value)}
-          value={draft.location}
-        />
         <div className="grid gap-3 md:grid-cols-2">
-          <TextInput
-            label="Cancellation cutoff hours"
-            min="0"
-            onChange={(value) => updateDraft("cancellationDeadlineHours", value)}
-            step="1"
-            type="number"
-            value={draft.cancellationDeadlineHours}
-          />
-          <TextInput
-            label="Reminder days"
-            onChange={(value) => updateDraft("reminderDays", value)}
-            value={draft.reminderDays}
-          />
+          <label className="block text-sm font-semibold text-[#26385f]">
+            Description
+            <textarea
+              className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+              onChange={(event) => updateDraft("description", event.target.value)}
+              value={draft.description}
+            />
+          </label>
+          <label className="block text-sm font-semibold text-[#26385f]">
+            Instructions
+            <textarea
+              className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+              onChange={(event) => updateDraft("instructions", event.target.value)}
+              value={draft.instructions}
+            />
+          </label>
         </div>
-        <label className="block text-sm font-semibold text-[#26385f]">
-          Description
-          <textarea
-            className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-            onChange={(event) => updateDraft("description", event.target.value)}
-            value={draft.description}
-          />
-        </label>
-        <label className="block text-sm font-semibold text-[#26385f]">
-          Instructions
-          <textarea
-            className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-            onChange={(event) => updateDraft("instructions", event.target.value)}
-            value={draft.instructions}
-          />
-        </label>
-        <label className="block text-sm font-semibold text-[#26385f]">
-          Parking
-          <textarea
-            className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-            onChange={(event) => updateDraft("parkingInfo", event.target.value)}
-            value={draft.parkingInfo}
-          />
-        </label>
-        <label className="block text-sm font-semibold text-[#26385f]">
-          Private admin notes
-          <textarea
-            className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-            onChange={(event) => updateDraft("privateNotes", event.target.value)}
-            value={draft.privateNotes}
-          />
-        </label>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="block text-sm font-semibold text-[#26385f]">
+            Parking
+            <textarea
+              className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+              onChange={(event) => updateDraft("parkingInfo", event.target.value)}
+              value={draft.parkingInfo}
+            />
+          </label>
+          <label className="block text-sm font-semibold text-[#26385f]">
+            Private admin notes
+            <textarea
+              className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+              onChange={(event) => updateDraft("privateNotes", event.target.value)}
+              value={draft.privateNotes}
+            />
+          </label>
+        </div>
 
         {!isEditing ? (
           <div className="grid gap-3 md:grid-cols-2">
@@ -3277,67 +3289,71 @@ function EventForm({
           <div className="mt-3 divide-y divide-[#eee4d0] border-y border-[#eee4d0]">
             {draft.positions.map((position, index) => (
               <div className="space-y-3 py-4" key={position.id ?? index}>
-                <TextInput
-                  label="Position"
-                  onChange={(value) => updatePosition(index, "title", value)}
-                  value={position.title}
-                />
-                <TextInput
-                  label="Granted hours"
-                  min="0.5"
-                  onChange={(value) => updatePosition(index, "hours", value)}
-                  placeholder={draft.hours}
-                  step="0.5"
-                  type="number"
-                  value={position.hours}
-                />
-                <TextInput
-                  label="Requirements"
-                  onChange={(value) => updatePosition(index, "requirements", value)}
-                  value={position.requirements}
-                />
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
-                    <input
-                      checked={position.clearanceRequired}
-                      className="h-4 w-4 accent-[#183058]"
-                      onChange={(event) =>
-                        updatePosition(
-                          index,
-                          "clearanceRequired",
-                          event.target.checked
-                        )
-                      }
-                      type="checkbox"
-                    />
-                    Clearance
-                  </label>
-                  <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
-                    <input
-                      checked={position.adultOnly}
-                      className="h-4 w-4 accent-[#183058]"
-                      onChange={(event) =>
-                        updatePosition(index, "adultOnly", event.target.checked)
-                      }
-                      type="checkbox"
-                    />
-                    Adult
-                  </label>
-                  <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
-                    <input
-                      checked={position.trainingRequired}
-                      className="h-4 w-4 accent-[#183058]"
-                      onChange={(event) =>
-                        updatePosition(
-                          index,
-                          "trainingRequired",
-                          event.target.checked
-                        )
-                      }
-                      type="checkbox"
-                    />
-                    Training
-                  </label>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px]">
+                  <TextInput
+                    label="Position"
+                    onChange={(value) => updatePosition(index, "title", value)}
+                    value={position.title}
+                  />
+                  <TextInput
+                    label="Granted hours"
+                    min="0.5"
+                    onChange={(value) => updatePosition(index, "hours", value)}
+                    placeholder={draft.hours}
+                    step="0.5"
+                    type="number"
+                    value={position.hours}
+                  />
+                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <TextInput
+                    label="Requirements"
+                    onChange={(value) => updatePosition(index, "requirements", value)}
+                    value={position.requirements}
+                  />
+                  <div className="grid gap-2 self-end sm:grid-cols-3">
+                    <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
+                      <input
+                        checked={position.clearanceRequired}
+                        className="h-4 w-4 accent-[#183058]"
+                        onChange={(event) =>
+                          updatePosition(
+                            index,
+                            "clearanceRequired",
+                            event.target.checked
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      Clearance
+                    </label>
+                    <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
+                      <input
+                        checked={position.adultOnly}
+                        className="h-4 w-4 accent-[#183058]"
+                        onChange={(event) =>
+                          updatePosition(index, "adultOnly", event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      Adult
+                    </label>
+                    <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
+                      <input
+                        checked={position.trainingRequired}
+                        className="h-4 w-4 accent-[#183058]"
+                        onChange={(event) =>
+                          updatePosition(
+                            index,
+                            "trainingRequired",
+                            event.target.checked
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      Training
+                    </label>
+                  </div>
                 </div>
                 <label className="block text-sm font-semibold text-[#26385f]">
                   Position description
@@ -3610,6 +3626,7 @@ function EventBoard({
   onEditEvent,
   onJoinWaitlist,
   onLeaveWaitlist,
+  onRequestCompletion,
   onRelease,
   onRequestSwap,
   origin = "",
@@ -3627,6 +3644,7 @@ function EventBoard({
   onEditEvent?: (eventId: string) => void;
   onJoinWaitlist?: (positionId: string) => void;
   onLeaveWaitlist?: (waitlistId: string) => void;
+  onRequestCompletion?: (signupId: string) => void;
   onRelease?: (signupId: string) => void;
   onRequestSwap?: (signupId: string) => void;
   origin?: string;
@@ -3747,12 +3765,6 @@ function EventBoard({
                   {formatTime(event.startTime)} - {formatTime(event.endTime)}
                 </p>
                 <p>{event.location}</p>
-                <p className="mt-1 text-[#6f664f]">
-                  Cancel cutoff: {event.cancellationDeadlineHours} hrs
-                </p>
-                <p className="text-[#6f664f]">
-                  Reminders: {event.reminderDays.join(", ")} days
-                </p>
                 {mode === "admin" ? (
                   <div className="mt-3 flex flex-wrap gap-2 md:justify-end">
                     <button
@@ -3861,6 +3873,7 @@ function EventBoard({
                     onJoinWaitlist={onJoinWaitlist}
                     onLeaveWaitlist={onLeaveWaitlist}
                     policySigned={policySigned}
+                    onRequestCompletion={onRequestCompletion}
                     onRelease={onRelease}
                     onRequestSwap={onRequestSwap}
                     onUpdateSignup={onUpdateSignup}
@@ -3918,6 +3931,7 @@ function PositionAction({
   onJoinWaitlist,
   onLeaveWaitlist,
   policySigned = true,
+  onRequestCompletion,
   onRelease,
   onRequestSwap,
   onUpdateSignup,
@@ -3929,6 +3943,7 @@ function PositionAction({
   onJoinWaitlist?: (positionId: string) => void;
   onLeaveWaitlist?: (waitlistId: string) => void;
   policySigned?: boolean;
+  onRequestCompletion?: (signupId: string) => void;
   onRelease?: (signupId: string) => void;
   onRequestSwap?: (signupId: string) => void;
   onUpdateSignup?: (signupId: string, update: AdminSignupUpdate) => void;
@@ -3974,12 +3989,16 @@ function PositionAction({
         ) : null}
         {signup.status === "reserved" ? (
           <button
-            className="rounded-md bg-[#183058] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#102344] disabled:opacity-50"
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
+              signup.completionRequestedAt
+                ? "bg-[#486a2a] hover:bg-[#36511f]"
+                : "bg-[#183058] hover:bg-[#102344]"
+            }`}
             disabled={busy}
             onClick={() => onUpdateSignup?.(signup.id, { status: "completed" })}
             type="button"
           >
-            Mark completed
+            {signup.completionRequestedAt ? "Approve hours" : "Mark completed"}
           </button>
         ) : (
           <button
@@ -4060,15 +4079,29 @@ function PositionAction({
         <StatusPill status={signupDisplayStatus(signup)} />
         <button
           className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || Boolean(signup.completionRequestedAt)}
           onClick={() => onRelease?.(signup.id)}
           type="button"
         >
           Release
         </button>
+        {!signup.completionRequestedAt ? (
+          <button
+            className="rounded-md bg-[#486a2a] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#36511f] disabled:opacity-50"
+            disabled={busy}
+            onClick={() => onRequestCompletion?.(signup.id)}
+            type="button"
+          >
+            Mark completed
+          </button>
+        ) : null}
         <button
           className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
-          disabled={busy || Boolean(signup.swapRequestedAt)}
+          disabled={
+            busy ||
+            Boolean(signup.swapRequestedAt) ||
+            Boolean(signup.completionRequestedAt)
+          }
           onClick={() => onRequestSwap?.(signup.id)}
           type="button"
         >
@@ -4121,6 +4154,7 @@ function StatusPill({
     | "open"
     | "filled"
     | "reserved"
+    | "approval_requested"
     | "completed"
     | "checked_in"
     | "checked_out"
@@ -4132,6 +4166,7 @@ function StatusPill({
     open: "bg-[#f4e5bd] text-[#102344]",
     filled: "bg-[#f5ecd8] text-[#6f664f]",
     reserved: "bg-[#fff1cf] text-[#7a4d00]",
+    approval_requested: "bg-[#fff8e4] text-[#7a4d00]",
     completed: "bg-[#e8f0df] text-[#486a2a]",
     checked_in: "bg-[#edf3f8] text-[#183058]",
     checked_out: "bg-[#e8f0df] text-[#486a2a]",
@@ -4144,6 +4179,7 @@ function StatusPill({
     open: "Open",
     filled: "Filled",
     reserved: "Pending",
+    approval_requested: "Awaiting approval",
     completed: "Completed",
     checked_in: "Checked in",
     checked_out: "Checked out",

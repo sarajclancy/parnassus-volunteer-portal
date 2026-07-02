@@ -1,5 +1,6 @@
 import {
   claimPosition,
+  requestSignupCompletion,
   releaseSignup,
   requestSignupSwap,
   requireFamily,
@@ -32,5 +33,11 @@ export async function PATCH(request: Request) {
     return response;
   }
 
-  return requestSignupSwap(await request.json(), account);
+  const payload = await request.json();
+
+  if ((payload as { action?: string }).action === "complete") {
+    return requestSignupCompletion(payload, account);
+  }
+
+  return requestSignupSwap(payload, account);
 }

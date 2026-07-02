@@ -193,6 +193,7 @@ export const signups = sqliteTable(
       .default("reserved"),
     claimedAt: text("claimed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     completedAt: text("completed_at"),
+    completionRequestedAt: text("completion_requested_at"),
     checkedInAt: text("checked_in_at"),
     checkedOutAt: text("checked_out_at"),
     noShowAt: text("no_show_at"),

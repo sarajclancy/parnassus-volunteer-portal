@@ -75,6 +75,7 @@ export type PositionSignup = {
   status: "reserved" | "completed";
   claimedAt: string;
   completedAt: string | null;
+  completionRequestedAt: string | null;
   checkedInAt: string | null;
   checkedOutAt: string | null;
   noShowAt: string | null;
@@ -828,6 +829,10 @@ async function ensureSignupWorkflowColumns(db: D1Database) {
     ["checked_out_at", "ALTER TABLE signups ADD COLUMN checked_out_at TEXT"],
     ["no_show_at", "ALTER TABLE signups ADD COLUMN no_show_at TEXT"],
     ["swap_requested_at", "ALTER TABLE signups ADD COLUMN swap_requested_at TEXT"],
+    [
+      "completion_requested_at",
+      "ALTER TABLE signups ADD COLUMN completion_requested_at TEXT",
+    ],
     ["swap_note", "ALTER TABLE signups ADD COLUMN swap_note TEXT NOT NULL DEFAULT ''"],
   ].forEach(([column, statement]) => {
     if (!existingColumns.has(column)) {
@@ -980,6 +985,7 @@ export async function ensurePortalData() {
         status TEXT NOT NULL DEFAULT 'reserved' CHECK (status IN ('reserved', 'completed')),
         claimed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         completed_at TEXT,
+        completion_requested_at TEXT,
         checked_in_at TEXT,
         checked_out_at TEXT,
         no_show_at TEXT,
@@ -1736,6 +1742,7 @@ export async function getPortalData(account: Account) {
         signups.status AS signupStatus,
         signups.claimed_at AS signupClaimedAt,
         signups.completed_at AS signupCompletedAt,
+        signups.completion_requested_at AS signupCompletionRequestedAt,
         signups.checked_in_at AS signupCheckedInAt,
         signups.checked_out_at AS signupCheckedOutAt,
         signups.no_show_at AS signupNoShowAt,
@@ -1812,6 +1819,9 @@ export async function getPortalData(account: Account) {
               claimedAt: String(row.signupClaimedAt),
               completedAt: row.signupCompletedAt
                 ? String(row.signupCompletedAt)
+                : null,
+              completionRequestedAt: row.signupCompletionRequestedAt
+                ? String(row.signupCompletionRequestedAt)
                 : null,
               checkedInAt: row.signupCheckedInAt
                 ? String(row.signupCheckedInAt)
@@ -2775,6 +2785,7 @@ export async function releaseSignup(payload: unknown, family: Account) {
         signups.id,
         signups.status,
         signups.position_id AS positionId,
+        signups.completion_requested_at AS completionRequestedAt,
         events.date,
         events.start_time AS startTime,
         events.cancellation_deadline_hours AS cancellationDeadlineHours
@@ -2789,6 +2800,7 @@ export async function releaseSignup(payload: unknown, family: Account) {
       id: string;
       status: string;
       positionId: string;
+      completionRequestedAt: string | null;
       date: string;
       startTime: string;
       cancellationDeadlineHours: number;
@@ -2801,6 +2813,13 @@ export async function releaseSignup(payload: unknown, family: Account) {
   if (signup.status === "completed") {
     return Response.json(
       { error: "Completed hours cannot be released by the family." },
+      { status: 409 }
+    );
+  }
+
+  if (signup.completionRequestedAt) {
+    return Response.json(
+      { error: "Completed hours are already awaiting admin approval." },
       { status: 409 }
     );
   }
@@ -2840,10 +2859,13 @@ export async function requestSignupSwap(payload: unknown, family: Account) {
 
   const signup = await db
     .prepare(
-      "SELECT id, status FROM signups WHERE id = ? AND family_id = ?"
+      `SELECT id, status, completion_requested_at AS completionRequestedAt
+       FROM signups
+       WHERE id = ?
+         AND family_id = ?`
     )
     .bind(signupId, family.id)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; status: string; completionRequestedAt: string | null }>();
 
   if (!signup) {
     return Response.json({ error: "Signup not found." }, { status: 404 });
@@ -2856,6 +2878,13 @@ export async function requestSignupSwap(payload: unknown, family: Account) {
     );
   }
 
+  if (signup.completionRequestedAt) {
+    return Response.json(
+      { error: "Completed hours are already awaiting admin approval." },
+      { status: 409 }
+    );
+  }
+
   await db
     .prepare(
       `UPDATE signups
@@ -2864,6 +2893,54 @@ export async function requestSignupSwap(payload: unknown, family: Account) {
        WHERE id = ?`
     )
     .bind(note, signupId)
+    .run();
+
+  return Response.json({ data: await getPortalData(family) });
+}
+
+export async function requestSignupCompletion(payload: unknown, family: Account) {
+  const db = await ensurePortalData();
+  const signupId = (payload as { signupId?: string }).signupId?.trim();
+
+  if (!signupId) {
+    return Response.json({ error: "Signup is required." }, { status: 400 });
+  }
+
+  const signup = await db
+    .prepare(
+      `SELECT id, status, no_show_at AS noShowAt
+       FROM signups
+       WHERE id = ?
+         AND family_id = ?`
+    )
+    .bind(signupId, family.id)
+    .first<{ id: string; status: string; noShowAt: string | null }>();
+
+  if (!signup) {
+    return Response.json({ error: "Signup not found." }, { status: 404 });
+  }
+
+  if (signup.status === "completed") {
+    return Response.json(
+      { error: "These hours are already completed." },
+      { status: 409 }
+    );
+  }
+
+  if (signup.noShowAt) {
+    return Response.json(
+      { error: "This signup is marked no-show. Ask an admin to clear it first." },
+      { status: 409 }
+    );
+  }
+
+  await db
+    .prepare(
+      `UPDATE signups
+       SET completion_requested_at = COALESCE(completion_requested_at, CURRENT_TIMESTAMP)
+       WHERE id = ?`
+    )
+    .bind(signupId)
     .run();
 
   return Response.json({ data: await getPortalData(family) });
@@ -3354,6 +3431,7 @@ export async function updateSignupStatus(payload: unknown, admin: Account) {
         `UPDATE signups
          SET no_show_at = CURRENT_TIMESTAMP,
              completed_at = NULL,
+             completion_requested_at = NULL,
              status = 'reserved'
          WHERE id = ?`
       )
@@ -3389,6 +3467,7 @@ export async function updateSignupStatus(payload: unknown, admin: Account) {
         `UPDATE signups
          SET status = 'completed',
              completed_at = CURRENT_TIMESTAMP,
+             completion_requested_at = NULL,
              checked_in_at = COALESCE(checked_in_at, CURRENT_TIMESTAMP),
              checked_out_at = COALESCE(checked_out_at, CURRENT_TIMESTAMP),
              no_show_at = NULL,
@@ -3401,7 +3480,11 @@ export async function updateSignupStatus(payload: unknown, admin: Account) {
   } else {
     await db
       .prepare(
-        "UPDATE signups SET status = 'reserved', completed_at = NULL WHERE id = ?"
+        `UPDATE signups
+         SET status = 'reserved',
+             completed_at = NULL,
+             completion_requested_at = NULL
+         WHERE id = ?`
       )
       .bind(signupId)
       .run();
