@@ -156,6 +156,27 @@ export type VolunteerPolicy = {
   acknowledgedFamilyIds: string[];
 };
 
+export type PortalDocumentSubmission = {
+  id: string;
+  documentId: string;
+  familyId: string;
+  familyName: string;
+  fileName: string;
+  fileDataUrl: string;
+  submittedAt: string;
+};
+
+export type PortalDocument = {
+  id: string;
+  title: string;
+  description: string;
+  fileName: string;
+  fileDataUrl: string;
+  uploadedAt: string;
+  submissions: PortalDocumentSubmission[];
+  mySubmission: PortalDocumentSubmission | null;
+};
+
 export const sessionCookieName = "volunteer_session";
 
 type D1Result<T> = {
@@ -239,8 +260,22 @@ type VolunteerPolicyPayload = {
   attachmentDataUrl?: string;
 };
 
+type PortalDocumentPayload = {
+  title?: string;
+  description?: string;
+  fileName?: string;
+  fileDataUrl?: string;
+};
+
+type FamilyDocumentPayload = {
+  documentId?: string;
+  fileName?: string;
+  fileDataUrl?: string;
+};
+
 const passwordSalt = "school-volunteer-portal-v1";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 30;
+const documentUploadMaxLength = 1_200_000;
 
 function getD1() {
   if (!env.DB) {
@@ -548,6 +583,26 @@ function eventStartMs(date: string, startTime: string) {
   return Number.isFinite(value) ? value : null;
 }
 
+function currentPortalDateKey() {
+  const parts = new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function isEventDateTodayOrPast(date: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= currentPortalDateKey();
+}
+
 function isInsideCancellationWindow(
   date: string,
   startTime: string,
@@ -622,6 +677,103 @@ async function getActivePolicyForAccount(
         ? acknowledgements.map((row) => String(row.familyId))
         : [],
   };
+}
+
+async function getPortalDocuments(
+  db: D1Database,
+  account: Account
+): Promise<PortalDocument[]> {
+  const documentRows = await db
+    .prepare(
+      `SELECT
+        id,
+        title,
+        description,
+        file_name AS fileName,
+        file_data_url AS fileDataUrl,
+        uploaded_at AS uploadedAt
+       FROM portal_documents
+       ORDER BY uploaded_at DESC`
+    )
+    .all();
+
+  const documents = (
+    (documentRows as D1Result<Record<string, unknown>>).results ?? []
+  ).map(
+    (row) =>
+      ({
+        id: String(row.id),
+        title: String(row.title),
+        description: String(row.description ?? ""),
+        fileName: String(row.fileName),
+        fileDataUrl: String(row.fileDataUrl),
+        uploadedAt: String(row.uploadedAt),
+        submissions: [],
+        mySubmission: null,
+      } satisfies PortalDocument)
+  );
+  const documentsById = new Map(documents.map((document) => [document.id, document]));
+
+  const submissionQuery =
+    account.role === "admin"
+      ? db.prepare(
+          `SELECT
+            family_document_submissions.id,
+            family_document_submissions.document_id AS documentId,
+            family_document_submissions.family_id AS familyId,
+            accounts.name AS familyName,
+            family_document_submissions.file_name AS fileName,
+            family_document_submissions.file_data_url AS fileDataUrl,
+            family_document_submissions.submitted_at AS submittedAt
+           FROM family_document_submissions
+           JOIN accounts ON accounts.id = family_document_submissions.family_id
+           ORDER BY family_document_submissions.submitted_at DESC`
+        )
+      : db
+          .prepare(
+            `SELECT
+              family_document_submissions.id,
+              family_document_submissions.document_id AS documentId,
+              family_document_submissions.family_id AS familyId,
+              accounts.name AS familyName,
+              family_document_submissions.file_name AS fileName,
+              family_document_submissions.file_data_url AS fileDataUrl,
+              family_document_submissions.submitted_at AS submittedAt
+             FROM family_document_submissions
+             JOIN accounts ON accounts.id = family_document_submissions.family_id
+             WHERE family_document_submissions.family_id = ?
+             ORDER BY family_document_submissions.submitted_at DESC`
+          )
+          .bind(account.id);
+
+  const submissionRows = await submissionQuery.all();
+
+  for (const row of
+    (submissionRows as D1Result<Record<string, unknown>>).results ?? []) {
+    const document = documentsById.get(String(row.documentId));
+
+    if (!document) {
+      continue;
+    }
+
+    const submission = {
+      id: String(row.id),
+      documentId: String(row.documentId),
+      familyId: String(row.familyId),
+      familyName: String(row.familyName),
+      fileName: String(row.fileName),
+      fileDataUrl: String(row.fileDataUrl),
+      submittedAt: String(row.submittedAt),
+    };
+
+    document.submissions.push(submission);
+
+    if (submission.familyId === account.id) {
+      document.mySubmission = submission;
+    }
+  }
+
+  return documents;
 }
 
 async function requireCurrentPolicyAcknowledgement(
@@ -1041,6 +1193,37 @@ export async function ensurePortalData() {
     ),
     db.prepare(
       "CREATE INDEX IF NOT EXISTS policy_acknowledgements_family_id_idx ON policy_acknowledgements (family_id)"
+    ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS portal_documents (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        file_name TEXT NOT NULL,
+        file_data_url TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL REFERENCES accounts(id),
+        uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    ),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS portal_documents_uploaded_at_idx ON portal_documents (uploaded_at)"
+    ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS family_document_submissions (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES portal_documents(id) ON DELETE CASCADE,
+        family_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        file_data_url TEXT NOT NULL,
+        submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(document_id, family_id)
+      )`
+    ),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS family_document_submissions_document_id_idx ON family_document_submissions (document_id)"
+    ),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS family_document_submissions_family_id_idx ON family_document_submissions (family_id)"
     ),
     db.prepare(
       `CREATE TABLE IF NOT EXISTS sessions (
@@ -2027,6 +2210,7 @@ export async function getPortalData(account: Account) {
   return {
     account,
     activePolicy: await getActivePolicyForAccount(db, account),
+    documents: await getPortalDocuments(db, account),
     events: Array.from(eventsById.values()),
     families,
   };
@@ -2824,6 +3008,16 @@ export async function releaseSignup(payload: unknown, family: Account) {
     );
   }
 
+  if (isEventDateTodayOrPast(signup.date)) {
+    return Response.json(
+      {
+        error:
+          "This event is today or has already passed, so it can no longer be released.",
+      },
+      { status: 409 }
+    );
+  }
+
   if (
     isInsideCancellationWindow(
       signup.date,
@@ -2859,13 +3053,24 @@ export async function requestSignupSwap(payload: unknown, family: Account) {
 
   const signup = await db
     .prepare(
-      `SELECT id, status, completion_requested_at AS completionRequestedAt
+      `SELECT
+        signups.id,
+        signups.status,
+        signups.completion_requested_at AS completionRequestedAt,
+        events.date
        FROM signups
-       WHERE id = ?
-         AND family_id = ?`
+       JOIN positions ON positions.id = signups.position_id
+       JOIN events ON events.id = positions.event_id
+       WHERE signups.id = ?
+         AND signups.family_id = ?`
     )
     .bind(signupId, family.id)
-    .first<{ id: string; status: string; completionRequestedAt: string | null }>();
+    .first<{
+      id: string;
+      status: string;
+      completionRequestedAt: string | null;
+      date: string;
+    }>();
 
   if (!signup) {
     return Response.json({ error: "Signup not found." }, { status: 404 });
@@ -2881,6 +3086,16 @@ export async function requestSignupSwap(payload: unknown, family: Account) {
   if (signup.completionRequestedAt) {
     return Response.json(
       { error: "Completed hours are already awaiting admin approval." },
+      { status: 409 }
+    );
+  }
+
+  if (isEventDateTodayOrPast(signup.date)) {
+    return Response.json(
+      {
+        error:
+          "This event is today or has already passed, so a swap can no longer be requested.",
+      },
       { status: 409 }
     );
   }
@@ -3093,6 +3308,121 @@ export async function acknowledgeVolunteerPolicy(
          VALUES (?, ?, ?, ?)`
       )
       .bind(crypto.randomUUID(), policyId, family.id, signerName)
+      .run();
+  }
+
+  return Response.json({ data: await getPortalData(family) });
+}
+
+export async function publishPortalDocument(payload: unknown, admin: Account) {
+  const db = await ensurePortalData();
+  const data = payload as PortalDocumentPayload;
+  const title = data.title?.trim() ?? "";
+  const description = data.description?.trim() ?? "";
+  const fileName = data.fileName?.trim() ?? "";
+  const fileDataUrl = data.fileDataUrl?.trim() ?? "";
+
+  if (!title || !fileName || !fileDataUrl) {
+    return Response.json(
+      { error: "Document title and uploaded file are required." },
+      { status: 400 }
+    );
+  }
+
+  if (!fileDataUrl.startsWith("data:")) {
+    return Response.json(
+      { error: "The uploaded document could not be read." },
+      { status: 400 }
+    );
+  }
+
+  if (fileDataUrl.length > documentUploadMaxLength) {
+    return Response.json(
+      { error: "That document is too large. Please upload a smaller PDF or form." },
+      { status: 400 }
+    );
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO portal_documents
+        (id, title, description, file_name, file_data_url, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .bind(crypto.randomUUID(), title, description, fileName, fileDataUrl, admin.id)
+    .run();
+
+  return Response.json({ data: await getPortalData(admin) }, { status: 201 });
+}
+
+export async function submitFamilyDocument(payload: unknown, family: Account) {
+  const db = await ensurePortalData();
+  const data = payload as FamilyDocumentPayload;
+  const documentId = data.documentId?.trim() ?? "";
+  const fileName = data.fileName?.trim() ?? "";
+  const fileDataUrl = data.fileDataUrl?.trim() ?? "";
+
+  if (!documentId || !fileName || !fileDataUrl) {
+    return Response.json(
+      { error: "Document and completed attachment are required." },
+      { status: 400 }
+    );
+  }
+
+  if (!fileDataUrl.startsWith("data:")) {
+    return Response.json(
+      { error: "The completed attachment could not be read." },
+      { status: 400 }
+    );
+  }
+
+  if (fileDataUrl.length > documentUploadMaxLength) {
+    return Response.json(
+      { error: "That attachment is too large. Please upload a smaller file." },
+      { status: 400 }
+    );
+  }
+
+  const document = await db
+    .prepare("SELECT id FROM portal_documents WHERE id = ?")
+    .bind(documentId)
+    .first<{ id: string }>();
+
+  if (!document) {
+    return Response.json(
+      { error: "That portal document could not be found." },
+      { status: 404 }
+    );
+  }
+
+  const existing = await db
+    .prepare(
+      `SELECT id
+       FROM family_document_submissions
+       WHERE document_id = ? AND family_id = ?`
+    )
+    .bind(documentId, family.id)
+    .first<{ id: string }>();
+
+  if (existing) {
+    await db
+      .prepare(
+        `UPDATE family_document_submissions
+         SET file_name = ?,
+             file_data_url = ?,
+             submitted_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      )
+      .bind(fileName, fileDataUrl, existing.id)
+      .run();
+  } else {
+    await db
+      .prepare(
+        `INSERT INTO family_document_submissions
+          (id, document_id, family_id, file_name, file_data_url)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(crypto.randomUUID(), documentId, family.id, fileName, fileDataUrl)
       .run();
   }
 

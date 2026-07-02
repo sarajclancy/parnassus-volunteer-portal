@@ -270,6 +270,46 @@ export const policyAcknowledgements = sqliteTable(
   ]
 );
 
+export const portalDocuments = sqliteTable(
+  "portal_documents",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    fileName: text("file_name").notNull(),
+    fileDataUrl: text("file_data_url").notNull(),
+    uploadedBy: text("uploaded_by")
+      .notNull()
+      .references(() => accounts.id),
+    uploadedAt: text("uploaded_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("portal_documents_uploaded_at_idx").on(table.uploadedAt)]
+);
+
+export const familyDocumentSubmissions = sqliteTable(
+  "family_document_submissions",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => portalDocuments.id, { onDelete: "cascade" }),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    fileName: text("file_name").notNull(),
+    fileDataUrl: text("file_data_url").notNull(),
+    submittedAt: text("submitted_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("family_document_submissions_document_family_unique").on(
+      table.documentId,
+      table.familyId
+    ),
+    index("family_document_submissions_document_id_idx").on(table.documentId),
+    index("family_document_submissions_family_id_idx").on(table.familyId),
+  ]
+);
+
 export const sessions = sqliteTable(
   "sessions",
   {

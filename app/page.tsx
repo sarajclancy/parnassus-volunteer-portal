@@ -12,6 +12,7 @@ import type {
   EventGrade,
   FamilyMember,
   FamilySummary,
+  PortalDocument,
   PortalEvent,
   VolunteerPolicy,
 } from "@/lib/portal";
@@ -19,6 +20,7 @@ import type {
 type PortalData = {
   account: Account;
   activePolicy: VolunteerPolicy | null;
+  documents: PortalDocument[];
   events: PortalEvent[];
   families: FamilySummary[];
 };
@@ -155,6 +157,9 @@ const customFieldTypeOptions: Array<{ value: CustomFieldType; label: string }> =
   { value: "multi_select", label: "Multi-select" },
 ];
 
+const documentUploadAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.md";
+const documentUploadLimitBytes = 850_000;
+
 const initialDraft: EventDraft = {
   title: "",
   date: "2026-09-18",
@@ -269,6 +274,19 @@ function formatDate(date: string) {
     month: "short",
     day: "numeric",
   }).format(new Date(`${date}T12:00:00`));
+}
+
+function todayDateKey() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function isEventDateTodayOrPast(date: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= todayDateKey();
 }
 
 function formatDateRange(startDate: string, endDate: string) {
@@ -567,6 +585,15 @@ function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Could not read the selected file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function buildFamilyHoursRows(families: FamilySummary[]) {
@@ -1208,6 +1235,14 @@ function AdminPortal({
 
         <AdminToolsPanel portal={portal} />
 
+        <DocumentAdminPanel
+          busy={busy}
+          documents={portal.documents}
+          onBusyChange={onBusyChange}
+          onMessageChange={onMessageChange}
+          setPortal={setPortal}
+        />
+
         <PolicyAdminPanel
           activePolicy={portal.activePolicy}
           busy={busy}
@@ -1524,6 +1559,14 @@ function FamilyPortal({
           setPortal={setPortal}
         />
 
+        <FamilyDocumentsPanel
+          busy={busy}
+          documents={portal.documents}
+          onBusyChange={onBusyChange}
+          onMessageChange={onMessageChange}
+          setPortal={setPortal}
+        />
+
         <VolunteerPolicyPanel
           activePolicy={portal.activePolicy}
           busy={busy}
@@ -1672,13 +1715,7 @@ function PolicyAdminPanel({
       return;
     }
 
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ""));
-      reader.onerror = () => reject(new Error("Could not read policy file."));
-      reader.readAsDataURL(file);
-    });
-
+    const dataUrl = await readFileAsDataUrl(file);
     setAttachmentName(file.name);
     setAttachmentDataUrl(dataUrl);
   }
@@ -1777,6 +1814,375 @@ function PolicyAdminPanel({
           Publish policy
         </button>
       </form>
+    </section>
+  );
+}
+
+function DocumentAdminPanel({
+  busy,
+  documents,
+  onBusyChange,
+  onMessageChange,
+  setPortal,
+}: {
+  busy: boolean;
+  documents: PortalDocument[];
+  onBusyChange: (busy: boolean) => void;
+  onMessageChange: (message: string | null) => void;
+  setPortal: (portal: PortalData) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileDataUrl, setFileDataUrl] = useState("");
+
+  async function handleDocumentFile(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    if (file.size > documentUploadLimitBytes) {
+      onMessageChange(
+        "That document is too large for the built-in upload. Please use a smaller PDF or form."
+      );
+      return;
+    }
+
+    try {
+      setFileName(file.name);
+      setFileDataUrl(await readFileAsDataUrl(file));
+    } catch {
+      onMessageChange("That document could not be read.");
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onBusyChange(true);
+    onMessageChange(null);
+
+    const response = await fetch("/api/admin/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description,
+        fileName,
+        fileDataUrl,
+      }),
+    });
+    const data = (await response.json()) as { data?: PortalData; error?: string };
+
+    if (!response.ok || !data.data) {
+      onMessageChange(data.error ?? "The document could not be uploaded.");
+    } else {
+      setPortal(data.data);
+      setTitle("");
+      setDescription("");
+      setFileName("");
+      setFileDataUrl("");
+      onMessageChange("Document uploaded for families.");
+    }
+
+    onBusyChange(false);
+  }
+
+  return (
+    <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
+      <h2 className="text-lg font-semibold">Document Center</h2>
+      <p className="mt-1 text-sm text-[#6f664f]">
+        Upload school forms for families to download and return through their
+        account.
+      </p>
+
+      <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
+        <TextInput label="Document title" onChange={setTitle} value={title} />
+        <label className="block text-sm font-semibold text-[#26385f]">
+          Description
+          <textarea
+            className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+            onChange={(event) => setDescription(event.target.value)}
+            value={description}
+          />
+        </label>
+        <label className="block text-sm font-semibold text-[#26385f]">
+          Upload document
+          <input
+            accept={documentUploadAccept}
+            className="mt-2 w-full rounded-md border border-[#ccb987] bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+            onChange={(event) =>
+              void handleDocumentFile(event.target.files?.[0] ?? null)
+            }
+            type="file"
+          />
+        </label>
+        {fileName ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#eee4d0] bg-[#fffaf0] px-3 py-2 text-sm text-[#6f664f]">
+            <span>{fileName}</span>
+            <button
+              className="rounded-md border border-[#efb4ad] px-3 py-1.5 text-sm font-semibold text-[#9f2d20] transition hover:bg-[#fff0ee]"
+              onClick={() => {
+                setFileName("");
+                setFileDataUrl("");
+              }}
+              type="button"
+            >
+              Remove
+            </button>
+          </div>
+        ) : null}
+        <button
+          className="w-full rounded-md bg-[#183058] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#102344] disabled:opacity-50"
+          disabled={busy}
+          type="submit"
+        >
+          Upload document
+        </button>
+      </form>
+
+      <div className="mt-5 divide-y divide-[#eee4d0] border-y border-[#eee4d0]">
+        {documents.length === 0 ? (
+          <p className="py-4 text-sm text-[#6f664f]">
+            No documents have been uploaded yet.
+          </p>
+        ) : (
+          documents.map((item) => (
+            <div className="py-4" key={item.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-[#26385f]">{item.title}</p>
+                  {item.description ? (
+                    <p className="mt-1 text-sm text-[#6f664f]">
+                      {item.description}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 text-xs font-semibold uppercase text-[#8a784b]">
+                    Uploaded {formatTimestamp(item.uploadedAt)}
+                  </p>
+                </div>
+                <a
+                  className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8]"
+                  download={item.fileName}
+                  href={item.fileDataUrl}
+                >
+                  Download
+                </a>
+              </div>
+
+              <div className="mt-3 rounded-md border border-[#eee4d0] bg-[#fffaf0] p-3">
+                <p className="text-sm font-semibold text-[#26385f]">
+                  Family attachments
+                </p>
+                {item.submissions.length === 0 ? (
+                  <p className="mt-2 text-sm text-[#6f664f]">
+                    No families have attached this document yet.
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {item.submissions.map((submission) => (
+                      <div
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#eee4d0] bg-white px-3 py-2 text-sm"
+                        key={submission.id}
+                      >
+                        <div>
+                          <p className="font-semibold text-[#26385f]">
+                            {submission.familyName}
+                          </p>
+                          <p className="text-[#6f664f]">
+                            Attached {formatTimestamp(submission.submittedAt)}
+                          </p>
+                        </div>
+                        <a
+                          className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8]"
+                          download={submission.fileName}
+                          href={submission.fileDataUrl}
+                        >
+                          Download returned file
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FamilyDocumentsPanel({
+  busy,
+  documents,
+  onBusyChange,
+  onMessageChange,
+  setPortal,
+}: {
+  busy: boolean;
+  documents: PortalDocument[];
+  onBusyChange: (busy: boolean) => void;
+  onMessageChange: (message: string | null) => void;
+  setPortal: (portal: PortalData) => void;
+}) {
+  const [drafts, setDrafts] = useState<
+    Record<string, { fileName: string; fileDataUrl: string }>
+  >({});
+
+  async function handleAttachmentFile(documentId: string, file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    if (file.size > documentUploadLimitBytes) {
+      onMessageChange(
+        "That attachment is too large for the built-in upload. Please use a smaller file."
+      );
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setDrafts((current) => ({
+        ...current,
+        [documentId]: {
+          fileName: file.name,
+          fileDataUrl: dataUrl,
+        },
+      }));
+    } catch {
+      onMessageChange("That attachment could not be read.");
+    }
+  }
+
+  async function submitAttachment(documentId: string) {
+    const draft = drafts[documentId];
+
+    if (!draft) {
+      onMessageChange("Choose a completed file before attaching it.");
+      return;
+    }
+
+    onBusyChange(true);
+    onMessageChange(null);
+
+    const response = await fetch("/api/family/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        documentId,
+        fileName: draft.fileName,
+        fileDataUrl: draft.fileDataUrl,
+      }),
+    });
+    const data = (await response.json()) as { data?: PortalData; error?: string };
+
+    if (!response.ok || !data.data) {
+      onMessageChange(data.error ?? "The completed document could not be attached.");
+    } else {
+      setPortal(data.data);
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[documentId];
+        return next;
+      });
+      onMessageChange("Completed document attached to your family account.");
+    }
+
+    onBusyChange(false);
+  }
+
+  return (
+    <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
+      <h2 className="text-lg font-semibold">Documents</h2>
+      <p className="mt-1 text-sm text-[#6f664f]">
+        Download school forms, then attach the completed copy to your family
+        account.
+      </p>
+
+      <div className="mt-4 divide-y divide-[#eee4d0] border-y border-[#eee4d0]">
+        {documents.length === 0 ? (
+          <p className="py-4 text-sm text-[#6f664f]">
+            No documents are available yet.
+          </p>
+        ) : (
+          documents.map((item) => {
+            const draft = drafts[item.id];
+
+            return (
+              <div className="space-y-3 py-4" key={item.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[#26385f]">{item.title}</p>
+                    {item.description ? (
+                      <p className="mt-1 text-sm text-[#6f664f]">
+                        {item.description}
+                      </p>
+                    ) : null}
+                  </div>
+                  {item.mySubmission ? (
+                    <span className="inline-flex rounded-md bg-[#e8f0df] px-3 py-1.5 text-sm font-semibold text-[#486a2a]">
+                      Attached
+                    </span>
+                  ) : null}
+                </div>
+
+                <a
+                  className="inline-flex rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8]"
+                  download={item.fileName}
+                  href={item.fileDataUrl}
+                >
+                  Download form
+                </a>
+
+                {item.mySubmission ? (
+                  <div className="rounded-md border border-[#eee4d0] bg-[#fffaf0] p-3 text-sm text-[#6f664f]">
+                    <p>
+                      Current attachment:{" "}
+                      <a
+                        className="font-semibold text-[#26385f] underline-offset-2 hover:underline"
+                        download={item.mySubmission.fileName}
+                        href={item.mySubmission.fileDataUrl}
+                      >
+                        {item.mySubmission.fileName}
+                      </a>
+                    </p>
+                    <p className="mt-1">
+                      Attached {formatTimestamp(item.mySubmission.submittedAt)}
+                    </p>
+                  </div>
+                ) : null}
+
+                <label className="block text-sm font-semibold text-[#26385f]">
+                  Completed file
+                  <input
+                    accept={documentUploadAccept}
+                    className="mt-2 w-full rounded-md border border-[#ccb987] bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+                    onChange={(event) =>
+                      void handleAttachmentFile(
+                        item.id,
+                        event.target.files?.[0] ?? null
+                      )
+                    }
+                    type="file"
+                  />
+                </label>
+                {draft ? (
+                  <p className="text-sm text-[#6f664f]">Ready: {draft.fileName}</p>
+                ) : null}
+                <button
+                  className="w-full rounded-md bg-[#183058] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#102344] disabled:opacity-50"
+                  disabled={busy || !draft}
+                  onClick={() => void submitAttachment(item.id)}
+                  type="button"
+                >
+                  Attach to account
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
     </section>
   );
 }
@@ -2566,6 +2972,7 @@ function FamilyPendingEventsPanel({
               </div>
               <PositionAction
                 busy={busy}
+                eventDate={event.date}
                 mode="family"
                 onRequestCompletion={onRequestCompletion}
                 onRelease={onRelease}
@@ -3908,6 +4315,7 @@ function EventBoard({
 
                   <PositionAction
                     busy={busy}
+                    eventDate={event.date}
                     mode={mode}
                     onClaim={onClaim}
                     onJoinWaitlist={onJoinWaitlist}
@@ -3966,6 +4374,7 @@ function QrCheckInPanel({
 
 function PositionAction({
   busy,
+  eventDate,
   mode,
   onClaim,
   onJoinWaitlist,
@@ -3978,6 +4387,7 @@ function PositionAction({
   position,
 }: {
   busy: boolean;
+  eventDate: string;
   mode: "admin" | "family";
   onClaim?: (positionId: string) => void;
   onJoinWaitlist?: (positionId: string) => void;
@@ -3991,6 +4401,11 @@ function PositionAction({
 }) {
   const signup = position.signup;
   const myWaitlist = position.waitlist.find((entry) => entry.isMine);
+  const canReleaseOrRequestSwap = Boolean(
+    signup &&
+      !signup.completionRequestedAt &&
+      !isEventDateTodayOrPast(eventDate)
+  );
 
   if (mode === "admin") {
     if (!signup) {
@@ -4117,14 +4532,16 @@ function PositionAction({
     return (
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
         <StatusPill status={signupDisplayStatus(signup)} />
-        <button
-          className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
-          disabled={busy || Boolean(signup.completionRequestedAt)}
-          onClick={() => onRelease?.(signup.id)}
-          type="button"
-        >
-          Release
-        </button>
+        {canReleaseOrRequestSwap ? (
+          <button
+            className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
+            disabled={busy}
+            onClick={() => onRelease?.(signup.id)}
+            type="button"
+          >
+            Release
+          </button>
+        ) : null}
         {!signup.completionRequestedAt ? (
           <button
             className="rounded-md bg-[#486a2a] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#36511f] disabled:opacity-50"
@@ -4135,18 +4552,16 @@ function PositionAction({
             Mark completed
           </button>
         ) : null}
-        <button
-          className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
-          disabled={
-            busy ||
-            Boolean(signup.swapRequestedAt) ||
-            Boolean(signup.completionRequestedAt)
-          }
-          onClick={() => onRequestSwap?.(signup.id)}
-          type="button"
-        >
-          {signup.swapRequestedAt ? "Swap requested" : "Request swap"}
-        </button>
+        {canReleaseOrRequestSwap ? (
+          <button
+            className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
+            disabled={busy || Boolean(signup.swapRequestedAt)}
+            onClick={() => onRequestSwap?.(signup.id)}
+            type="button"
+          >
+            {signup.swapRequestedAt ? "Swap requested" : "Request swap"}
+          </button>
+        ) : null}
       </div>
     );
   }
