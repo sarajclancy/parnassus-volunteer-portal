@@ -297,10 +297,26 @@ function formatTimestamp(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatCompletedDate(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
 function collectPositions(events: PortalEvent[]) {
   return events.flatMap((event) =>
     event.positions.map((position) => ({ event, position }))
   );
+}
+
+function sumPositionHours(entries: ReturnType<typeof collectPositions>) {
+  return entries.reduce((total, { position }) => total + position.hours, 0);
 }
 
 function signedUpFamilyNames(event: PortalEvent) {
@@ -345,18 +361,6 @@ function signupDisplayStatus(signup: PortalEvent["positions"][number]["signup"])
   }
 
   return "reserved" as const;
-}
-
-function filterEventsByPosition(
-  events: PortalEvent[],
-  predicate: (position: PortalEvent["positions"][number]) => boolean
-) {
-  return events
-    .map((event) => ({
-      ...event,
-      positions: event.positions.filter(predicate),
-    }))
-    .filter((event) => event.positions.length > 0);
 }
 
 function filterEvents(
@@ -545,7 +549,7 @@ function buildFamilyHoursRows(families: FamilySummary[]) {
       "Student",
       "Grade",
       "Teacher",
-      "Signed off",
+      "Completed",
       "Pending",
       "Remaining",
       "Interests",
@@ -970,7 +974,7 @@ function LoginScreen({
             Volunteer Portal Sign In
           </h2>
           <p className="mt-3 text-base leading-7 text-[#3f3f3f]">
-            Select opportunities, track pending hours, and view signed-off hours
+            Select opportunities, track pending hours, and view completed hours
             toward your family volunteer goal.
           </p>
         </div>
@@ -1049,7 +1053,7 @@ function AdminPortal({
     search: "",
     cohort: "any",
     grade: "any",
-    availability: "all",
+    availability: "open",
   });
   const positions = useMemo(() => collectPositions(portal.events), [portal.events]);
   const editingEvent =
@@ -1145,12 +1149,14 @@ function AdminPortal({
               label="Pending"
               onClick={() => setSummaryView("pending")}
               value={formatHours(reservedHours)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "completed"}
-              label="Signed off"
+              label="Completed"
               onClick={() => setSummaryView("completed")}
               value={formatHours(completedHours)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "waitlist"}
@@ -1241,11 +1247,10 @@ function FamilyPortal({
     search: "",
     cohort: "any",
     grade: "any",
-    availability: "all",
+    availability: "open",
   });
   const family = portal.families[0];
   const positions = useMemo(() => collectPositions(portal.events), [portal.events]);
-  const myPositions = positions.filter(({ position }) => position.signup?.isMine);
   const openPositions = positions.filter(({ position }) => !position.signup);
   const myWaitlistPositions = positions.filter(({ position }) =>
     position.waitlist.some((entry) => entry.isMine)
@@ -1256,29 +1261,12 @@ function FamilyPortal({
   const completedPositions = positions.filter(
     ({ position }) => position.signup?.isMine && position.signup.status === "completed"
   );
+  const openHours = sumPositionHours(openPositions);
+  const waitlistHours = sumPositionHours(myWaitlistPositions);
   const remaining = Math.max(family.targetHours - family.completedHours, 0);
   const policySigned =
     !portal.activePolicy || Boolean(portal.activePolicy.acknowledgedAt);
-  const filteredEvents =
-    summaryView === "all"
-      ? portal.events
-      : summaryView === "pending"
-        ? filterEventsByPosition(
-            portal.events,
-            (position) => position.signup?.isMine && position.signup.status === "reserved"
-          )
-        : summaryView === "completed"
-          ? filterEventsByPosition(
-              portal.events,
-              (position) =>
-                position.signup?.isMine && position.signup.status === "completed"
-            )
-          : summaryView === "waitlist"
-            ? filterEventsByPosition(portal.events, (position) =>
-                position.waitlist.some((entry) => entry.isMine)
-              )
-          : filterEventsByPosition(portal.events, (position) => !position.signup);
-  const visibleEvents = filterEvents(filteredEvents, filters, family);
+  const visibleEvents = filterEvents(portal.events, filters, family);
 
   async function claim(positionId: string) {
     onBusyChange(true);
@@ -1415,7 +1403,7 @@ function FamilyPortal({
         </h1>
         <p className="mx-auto mt-3 max-w-3xl text-base leading-7 text-[#3f3f3f]">
           Select open positions, track pending hours, and see completed hours
-          after admin sign-off.
+          after admin approval.
         </p>
       </section>
 
@@ -1430,37 +1418,43 @@ function FamilyPortal({
               active={summaryView === "open"}
               label="Open"
               onClick={() => setSummaryView("open")}
-              value={String(openPositions.length)}
+              value={formatHours(openHours)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "waitlist"}
               label="Waitlist"
               onClick={() => setSummaryView("waitlist")}
-              value={String(myWaitlistPositions.length)}
+              value={formatHours(waitlistHours)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "remaining"}
               label="Remaining"
               onClick={() => setSummaryView("remaining")}
               value={formatHours(remaining)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "pending"}
               label="Pending"
               onClick={() => setSummaryView("pending")}
               value={formatHours(family.reservedHours)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "completed"}
-              label="Signed off"
+              label="Completed"
               onClick={() => setSummaryView("completed")}
               value={formatHours(family.completedHours)}
+              valueSuffix="hours"
             />
             <MetricButton
               active={summaryView === "all"}
               label="Goal"
               onClick={() => setSummaryView("all")}
               value={formatHours(family.targetHours)}
+              valueSuffix="hours"
             />
           </div>
         </section>
@@ -1488,98 +1482,31 @@ function FamilyPortal({
           onAcknowledgePolicy={acknowledgePolicy}
         />
 
-        <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">My Signups</h2>
-          <div className="mt-4 divide-y divide-[#eee4d0]">
-            {myPositions.length === 0 ? (
-              <p className="py-5 text-sm text-[#6f664f]">No selected positions.</p>
-            ) : (
-              myPositions.map(({ event, position }) => (
-                <div className="py-4" key={position.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{position.title}</p>
-                      <p className="mt-1 text-sm text-[#6f664f]">
-                        {formatDateRange(event.date, event.endDate)} ·{" "}
-                        {formatHours(position.hours)} hrs
-                      </p>
-                    </div>
-                    <StatusPill status={signupDisplayStatus(position.signup)} />
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <a
-                      className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8]"
-                      download={`${event.title}-${position.title}.ics`}
-                      href={calendarHref(event, position)}
-                    >
-                      Add calendar
-                    </a>
-                    {position.signup?.status === "reserved" ? (
-                      <button
-                        className="rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
-                        disabled={busy || Boolean(position.signup.swapRequestedAt)}
-                        onClick={() => requestSwap(position.signup!.id)}
-                        type="button"
-                      >
-                        {position.signup.swapRequestedAt ? "Swap requested" : "Request swap"}
-                      </button>
-                    ) : null}
-                  </div>
-                  {position.signup?.status === "reserved" ? (
-                    <button
-                      className="mt-2 rounded-md border border-[#ccb987] px-3 py-1.5 text-sm font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] disabled:opacity-50"
-                      disabled={busy}
-                      onClick={() => release(position.signup!.id)}
-                      type="button"
-                    >
-                      Release
-                    </button>
-                  ) : null}
-                </div>
-              ))
-            )}
-          </div>
-        </section>
       </aside>
 
-      <EventBoard
-        busy={busy}
-        emptyMessage="No positions match this view."
-        events={visibleEvents}
-        heading={
-          summaryView === "all"
-            ? "All Volunteer Events"
-            : summaryView === "pending"
-              ? "Pending Sign-Off"
-              : summaryView === "completed"
-                ? "Signed-Off Positions"
-                : summaryView === "waitlist"
-                  ? "Waitlisted Positions"
-                : "Open Positions"
-        }
-        mode="family"
-        onClaim={claim}
-        onJoinWaitlist={joinWaitlist}
-        onLeaveWaitlist={leaveWaitlist}
-        policySigned={policySigned}
-        onRelease={release}
-        onRequestSwap={requestSwap}
-        summaryPanel={
-          <>
-            <FamilySummaryPanel
-              completedPositions={completedPositions}
-              family={family}
-              openPositions={openPositions}
-              remaining={remaining}
-              pendingPositions={pendingPositions}
-              view={summaryView}
-              waitlistPositions={myWaitlistPositions}
-            />
-            <FamilyLedgerPanel positions={myPositions} waitlistPositions={myWaitlistPositions} />
-            <EventFilterPanel filters={filters} onFiltersChange={setFilters} />
-          </>
-        }
-      />
+      <section className="space-y-6">
+        <FamilyCompletedEventsPanel entries={completedPositions} />
+        <EventFilterPanel filters={filters} onFiltersChange={setFilters} />
+        <FamilyPendingEventsPanel
+          busy={busy}
+          entries={pendingPositions}
+          onRelease={release}
+          onRequestSwap={requestSwap}
+        />
+        <EventBoard
+          busy={busy}
+          emptyMessage="No volunteer positions match your filters."
+          events={visibleEvents}
+          heading="Volunteer Positions"
+          mode="family"
+          onClaim={claim}
+          onJoinWaitlist={joinWaitlist}
+          onLeaveWaitlist={leaveWaitlist}
+          policySigned={policySigned}
+          onRelease={release}
+          onRequestSwap={requestSwap}
+        />
+      </section>
       </div>
     </>
   );
@@ -1590,11 +1517,13 @@ function MetricButton({
   label,
   onClick,
   value,
+  valueSuffix,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
   value: string;
+  valueSuffix?: string;
 }) {
   return (
     <button
@@ -1615,11 +1544,14 @@ function MetricButton({
         {label}
       </span>
       <span
-        className={`mt-1 block text-2xl font-extrabold ${
+        className={`mt-1 flex items-baseline gap-1 text-2xl font-extrabold ${
           active ? "text-white" : "text-[#17345f]"
         }`}
       >
-        {value}
+        <span>{value}</span>
+        {valueSuffix ? (
+          <span className="text-sm font-bold leading-none">{valueSuffix}</span>
+        ) : null}
       </span>
     </button>
   );
@@ -1817,6 +1749,9 @@ function EventFilterPanel({
   return (
     <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold">Filters</h2>
+      <p className="mt-1 text-sm text-[#6f664f]">
+        Search volunteer positions by keyword, cohort, grade, and status.
+      </p>
       <div className="mt-4 grid gap-3 md:grid-cols-4">
         <TextInput
           label="Search"
@@ -1853,9 +1788,9 @@ function EventFilterPanel({
             }
             value={filters.availability}
           >
-            <option value="all">All</option>
-            <option value="open">Open</option>
-            <option value="filled">Filled</option>
+            <option value="all">All statuses</option>
+            <option value="open">Open positions</option>
+            <option value="filled">Filled positions</option>
             <option value="requires_clearance">Needs clearance</option>
           </select>
         </label>
@@ -1883,8 +1818,8 @@ function VolunteerPolicyPanel({
     <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold">Volunteer Info</h2>
       <div className="mt-4 space-y-2 text-sm text-[#6f664f]">
-        <p>40 signed-off hours per family each school year.</p>
-        <p>Pending hours count after admin sign-off.</p>
+        <p>40 completed hours per family each school year.</p>
+        <p>Pending hours become completed after admin approval.</p>
         <p>Some jobs require clearance, training, or adult volunteers.</p>
         <p>Use the calendar links for selected volunteer jobs.</p>
       </div>
@@ -1939,53 +1874,6 @@ function VolunteerPolicyPanel({
           )}
         </div>
       ) : null}
-    </section>
-  );
-}
-
-function FamilyLedgerPanel({
-  positions,
-  waitlistPositions,
-}: {
-  positions: ReturnType<typeof collectPositions>;
-  waitlistPositions: ReturnType<typeof collectPositions>;
-}) {
-  const rows = [
-    ...positions.map(({ event, position }) => ({
-      id: position.id,
-      event,
-      position,
-      status: signupDisplayStatus(position.signup),
-    })),
-    ...waitlistPositions.map(({ event, position }) => ({
-      id: `${position.id}-waitlist`,
-      event,
-      position,
-      status: "waitlist" as const,
-    })),
-  ];
-
-  return (
-    <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold">Hour Ledger</h2>
-      {rows.length === 0 ? (
-        <p className="mt-4 text-sm text-[#6f664f]">No ledger entries yet.</p>
-      ) : (
-        <div className="mt-4 divide-y divide-[#eee4d0]">
-          {rows.map(({ event, id, position, status }) => (
-            <div className="grid gap-3 py-3 md:grid-cols-[1fr_auto]" key={id}>
-              <div>
-                <p className="font-semibold">{position.title}</p>
-                <p className="mt-1 text-sm text-[#6f664f]">
-                  {event.title} · {formatDateRange(event.date, event.endDate)} ·{" "}
-                  {formatHours(position.hours)} hrs
-                </p>
-              </div>
-              <StatusPill status={status} />
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
@@ -2366,7 +2254,7 @@ function AdminSummaryPanel({
                 <p className="font-semibold">{family.name}</p>
                 <p className="mt-1 text-sm text-[#6f664f]">{family.email}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                  <span>{formatHours(family.completedHours)} signed off</span>
+                  <span>{formatHours(family.completedHours)} completed</span>
                   <span>{formatHours(family.reservedHours)} pending</span>
                   <span>{formatHours(remaining)} left</span>
                 </div>
@@ -2469,12 +2357,12 @@ function AdminSummaryPanel({
       entries: openPositions,
     },
     pending: {
-      title: "Pending Sign-Off",
+      title: "Pending Completion",
       count: reservedPositions.length,
       entries: reservedPositions,
     },
     completed: {
-      title: "Signed-Off Job Summary",
+      title: "Completed Job Summary",
       count: completedPositions.length,
       entries: completedPositions,
     },
@@ -2516,81 +2404,104 @@ function AdminSummaryPanel({
   );
 }
 
-function FamilySummaryPanel({
-  completedPositions,
-  family,
-  openPositions,
-  remaining,
-  pendingPositions,
-  view,
-  waitlistPositions,
+function FamilyCompletedEventsPanel({
+  entries,
 }: {
-  completedPositions: ReturnType<typeof collectPositions>;
-  family: FamilySummary;
-  openPositions: ReturnType<typeof collectPositions>;
-  remaining: number;
-  pendingPositions: ReturnType<typeof collectPositions>;
-  view: FamilySummaryView;
-  waitlistPositions: ReturnType<typeof collectPositions>;
+  entries: ReturnType<typeof collectPositions>;
 }) {
-  const panels = {
-    open: {
-      title: "Open Positions",
-      subtitle: `${openPositions.length} jobs available · ${formatHours(
-        openPositions.reduce((total, { position }) => total + position.hours, 0)
-      )} hours`,
-      entries: openPositions,
-    },
-    remaining: {
-      title: "Hours Remaining",
-      subtitle: `${formatHours(remaining)} hours left toward ${formatHours(
-        family.targetHours
-      )}`,
-      entries: openPositions,
-    },
-    pending: {
-      title: "Pending Sign-Off",
-      subtitle: `${pendingPositions.length} jobs · ${formatHours(
-        family.reservedHours
-      )} hours waiting for admin approval`,
-      entries: pendingPositions,
-    },
-    completed: {
-      title: "Signed-Off Positions",
-      subtitle: `${completedPositions.length} jobs · ${formatHours(
-        family.completedHours
-      )} hours`,
-      entries: completedPositions,
-    },
-    waitlist: {
-      title: "Waitlisted Positions",
-      subtitle: `${waitlistPositions.length} jobs where you are next in line if a spot opens`,
-      entries: waitlistPositions,
-    },
-    all: {
-      title: "Annual Goal",
-      subtitle: `${formatHours(
-        family.completedHours
-      )} signed off · ${formatHours(
-        family.reservedHours
-      )} pending of ${formatHours(family.targetHours)} hours`,
-      entries: openPositions,
-    },
-  };
-  const panel = panels[view];
-
   return (
     <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">{panel.title}</h2>
-          <p className="mt-1 text-sm text-[#6f664f]">{panel.subtitle}</p>
+          <h2 className="text-lg font-semibold">Completed Volunteer Events</h2>
+          <p className="mt-1 text-sm text-[#6f664f]">
+            {entries.length} completed jobs · {formatHours(sumPositionHours(entries))} hours
+          </p>
         </div>
       </div>
-      <SummaryPositionList
-        entries={panel.entries}
-        emptyMessage="No positions in this view."
-      />
+
+      {entries.length === 0 ? (
+        <p className="mt-4 text-sm text-[#6f664f]">
+          No completed volunteer events yet.
+        </p>
+      ) : (
+        <div className="mt-4 divide-y divide-[#eee4d0]">
+          {entries.map(({ event, position }) => (
+            <div
+              className="grid gap-3 py-4 md:grid-cols-[1fr_auto]"
+              key={position.id}
+            >
+              <div>
+                <p className="font-semibold text-[#14233d]">{event.title}</p>
+                <p className="mt-1 text-sm text-[#26385f]">{position.title}</p>
+                <p className="mt-1 text-sm text-[#6f664f]">
+                  Completed{" "}
+                  {formatCompletedDate(position.signup?.completedAt ?? null) ||
+                    formatDateRange(event.date, event.endDate)}{" "}
+                  · {formatHours(position.hours)} hours obtained
+                </p>
+              </div>
+              <StatusPill status="completed" />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FamilyPendingEventsPanel({
+  busy,
+  entries,
+  onRelease,
+  onRequestSwap,
+}: {
+  busy: boolean;
+  entries: ReturnType<typeof collectPositions>;
+  onRelease: (signupId: string) => void;
+  onRequestSwap: (signupId: string) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Pending Completion</h2>
+          <p className="mt-1 text-sm text-[#6f664f]">
+            {entries.length} selected jobs · {formatHours(sumPositionHours(entries))} hours pending
+          </p>
+        </div>
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="mt-4 text-sm text-[#6f664f]">
+          No selected positions are pending completion.
+        </p>
+      ) : (
+        <div className="mt-4 divide-y divide-[#eee4d0]">
+          {entries.map(({ event, position }) => (
+            <div
+              className="grid gap-3 py-4 md:grid-cols-[1fr_auto]"
+              key={position.id}
+            >
+              <div>
+                <p className="font-semibold text-[#14233d]">{event.title}</p>
+                <p className="mt-1 text-sm text-[#26385f]">{position.title}</p>
+                <p className="mt-1 text-sm text-[#6f664f]">
+                  {formatDateRange(event.date, event.endDate)} ·{" "}
+                  {formatHours(position.hours)} hours pending
+                </p>
+              </div>
+              <PositionAction
+                busy={busy}
+                mode="family"
+                onRelease={onRelease}
+                onRequestSwap={onRequestSwap}
+                position={position}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -2651,13 +2562,13 @@ function ProgressMeter({ family }: { family: FamilySummary }) {
         <div>
           <p className="text-sm font-semibold text-[#26385f]">Annual progress</p>
           <p className="mt-1 text-sm text-[#6f664f]">
-            {formatHours(family.completedHours)} signed off ·{" "}
+            {formatHours(family.completedHours)} completed ·{" "}
             {formatHours(family.reservedHours)} pending of{" "}
             {formatHours(family.targetHours)}
           </p>
         </div>
         <p className="text-2xl font-semibold text-[#183058]">
-          {Math.round(completedPercent)}%
+          {formatHours(family.completedHours)}/{formatHours(family.targetHours)}
         </p>
       </div>
       <div className="mt-4 h-3 overflow-hidden rounded-md bg-[#eee4d0]">
@@ -2683,7 +2594,7 @@ function FamilyProgressTable({ families }: { families: FamilySummary[] }) {
           <thead>
             <tr className="border-b border-[#d8c7a0] text-[#6f664f]">
               <th className="py-3 pr-4 font-semibold">Family</th>
-              <th className="py-3 pr-4 font-semibold">Signed off</th>
+              <th className="py-3 pr-4 font-semibold">Completed</th>
               <th className="py-3 pr-4 font-semibold">Pending</th>
               <th className="py-3 pr-4 font-semibold">Remaining</th>
               <th className="py-3 font-semibold">Progress</th>
@@ -4068,7 +3979,7 @@ function PositionAction({
             onClick={() => onUpdateSignup?.(signup.id, { status: "completed" })}
             type="button"
           >
-            Sign off
+            Mark completed
           </button>
         ) : (
           <button
@@ -4077,7 +3988,7 @@ function PositionAction({
             onClick={() => onUpdateSignup?.(signup.id, { status: "reserved" })}
             type="button"
           >
-            Undo sign-off
+            Undo completion
           </button>
         )}
         {signup.noShowAt ? (
@@ -4233,7 +4144,7 @@ function StatusPill({
     open: "Open",
     filled: "Filled",
     reserved: "Pending",
-    completed: "Signed off",
+    completed: "Completed",
     checked_in: "Checked in",
     checked_out: "Checked out",
     no_show: "No-show",

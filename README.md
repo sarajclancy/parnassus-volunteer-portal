@@ -10,12 +10,12 @@ A volunteer scheduling portal branded for Parnassus Preparatory Academy families
 - Waitlists, swap requests, calendar links, family hour ledger, and exportable admin reports.
 - Admin check-in, check-out, no-show tracking, clearance controls, private notes, roster email links, and phone list copy tools.
 - QR-code check-in links for signed-in families at event day stations.
-- Admin-published volunteer policy with family sign-off tracking before signup, waitlist, or QR check-in.
+- Admin-published volunteer policy with family acknowledgement tracking before signup, waitlist, or QR check-in.
 - Filled volunteer positions show the signed-up family name to all logged-in users.
 - Family profiles with student/class details, volunteer interests, multiple participating family members, preferred contact method, clearance status, and multiple phone numbers.
-- Automatic family progress toward the 40-hour annual requirement using signed-off hours only.
+- Automatic family progress toward the 40-hour annual requirement using completed hours only.
 - Exclusive position claims enforced by the server/database.
-- Admin sign-off for completed volunteer hours.
+- Admin approval for completed volunteer hours.
 
 ## Local Development
 

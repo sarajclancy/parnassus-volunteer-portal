@@ -2800,7 +2800,7 @@ export async function releaseSignup(payload: unknown, family: Account) {
 
   if (signup.status === "completed") {
     return Response.json(
-      { error: "Signed-off hours cannot be released by the family." },
+      { error: "Completed hours cannot be released by the family." },
       { status: 409 }
     );
   }
@@ -2851,7 +2851,7 @@ export async function requestSignupSwap(payload: unknown, family: Account) {
 
   if (signup.status === "completed") {
     return Response.json(
-      { error: "Signed-off hours cannot be swapped." },
+      { error: "Completed hours cannot be swapped." },
       { status: 409 }
     );
   }
