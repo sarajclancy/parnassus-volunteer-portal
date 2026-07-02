@@ -790,7 +790,7 @@ export default function Home() {
 
   if (initializing) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f1e4] px-5 text-[#14233d]">
+      <main className="grid min-h-screen place-items-center bg-white px-5 text-[#17345f]">
         <div className="h-10 w-10 animate-pulse rounded-md bg-[#183058]" />
       </main>
     );
@@ -809,11 +809,11 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f1e4] text-[#14233d]">
-      <header className="border-b border-[#d8c7a0] bg-[#fffaf0]">
+    <main className="min-h-screen bg-white text-[#14233d]">
+      <header className="border-b border-[#e5e5e5] bg-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-4">
           <div className="flex items-center gap-4">
-            <div className="grid h-14 w-14 place-items-center rounded-md border border-[#d8c7a0] bg-white p-1 shadow-sm">
+            <div className="grid h-14 w-14 place-items-center border border-[#e2c15a] bg-white p-1">
               <img
                 alt="Parnassus Preparatory Academy crest"
                 className="h-12 w-auto object-contain"
@@ -821,10 +821,12 @@ export default function Home() {
               />
             </div>
             <div>
-              <p className="text-xs font-semibold text-[#8b6818]">
+              <p className="text-xs font-semibold uppercase text-[#b58b00]">
                 Parnassus Preparatory Academy
               </p>
-              <h1 className="text-2xl font-semibold">Volunteer Portal</h1>
+              <h1 className="text-2xl font-bold text-[#17345f]">
+                Volunteer Portal
+              </h1>
               <p className="text-sm text-[#6f664f]">
                 {portal.account.name} · {portal.account.role}
               </p>
@@ -854,6 +856,7 @@ export default function Home() {
           busy={busy}
           onBusyChange={setBusy}
           onMessageChange={setMessage}
+          origin={origin}
           portal={portal}
           setPortal={setPortal}
         />
@@ -910,55 +913,114 @@ function LoginScreen({
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f7f1e4] px-5 py-10 text-[#14233d]">
-      <section className="w-full max-w-md rounded-lg border border-[#d8c7a0] bg-white p-6 shadow-sm">
-        <div className="mb-7 text-center">
-          <img
-            alt="Parnassus Preparatory Academy crest"
-            className="mx-auto h-32 w-auto object-contain"
-            src="/parnassus-crest.png"
-          />
-          <p className="mt-5 text-sm font-semibold text-[#8b6818]">
+    <main className="min-h-screen bg-white text-[#242424]">
+      <section className="mx-auto max-w-6xl px-5 pb-10 pt-20 text-center">
+        <p className="text-base font-normal uppercase text-[#2b2b2b]">
+          Click the box below to record your hours
+        </p>
+        <a
+          className="mt-1 inline-flex min-h-16 items-center justify-center bg-[#f0f0f0] px-4 text-center text-3xl font-extrabold uppercase text-[#17345f] transition hover:bg-[#e8e8e8] sm:px-7 sm:text-4xl"
+          href="#portal-sign-in"
+        >
+          Record Volunteer Hours
+        </a>
+
+        <h1 className="mt-10 text-3xl font-normal uppercase text-black">
+          Volunteering Opportunities
+        </h1>
+        <h2 className="mt-7 text-xl font-extrabold uppercase text-black">
+          Get Involved - Volunteer!
+        </h2>
+        <p className="mx-auto mt-4 max-w-6xl text-base leading-7 text-[#2f2f2f] sm:text-lg">
+          When adults volunteer, all students benefit! There are many
+          opportunities for parents and community members to get involved! Your
+          help is needed!
+        </p>
+      </section>
+
+      <section className="border-t border-[#e5e5e5] px-5 py-7 text-center">
+        <h2 className="text-3xl font-extrabold uppercase text-[#333333]">
+          Events
+        </h2>
+        <div className="mx-auto mt-10 max-w-lg">
+          <h3 className="text-2xl font-extrabold text-black">
+            Volunteer Portal
+          </h3>
+          <a
+            className="mx-auto mt-5 flex h-24 w-72 max-w-full flex-col items-center justify-center rounded-2xl border-4 border-[#d4a600] bg-[#0d4474] px-5 text-white shadow-sm transition hover:bg-[#0a3760]"
+            href="#portal-sign-in"
+          >
+            <span className="text-xl uppercase leading-6">Click Here To</span>
+            <span className="font-serif text-4xl italic leading-10">
+              Volunteer
+            </span>
+          </a>
+        </div>
+      </section>
+
+      <section
+        className="mx-auto grid max-w-6xl scroll-mt-6 gap-8 px-5 py-10 lg:grid-cols-[1fr_420px]"
+        id="portal-sign-in"
+      >
+        <div className="self-center text-center lg:text-left">
+          <p className="text-sm font-bold uppercase tracking-wide text-[#b58b00]">
             Parnassus Preparatory Academy
           </p>
-          <h1 className="text-2xl font-semibold">Volunteer Portal</h1>
-          <p className="mt-1 text-sm text-[#6f664f]">
-            Family and school access for volunteer hours
+          <h2 className="mt-2 text-3xl font-extrabold text-[#17345f]">
+            Volunteer Portal Sign In
+          </h2>
+          <p className="mt-3 text-base leading-7 text-[#3f3f3f]">
+            Select opportunities, track pending hours, and view signed-off hours
+            toward your family volunteer goal.
           </p>
         </div>
 
-        <form className="space-y-4" onSubmit={handleLogin}>
-          <label className="block text-sm font-semibold text-[#26385f]">
+        <form
+          className="rounded-lg border border-[#dedede] bg-white p-6 shadow-sm"
+          onSubmit={handleLogin}
+        >
+          <div className="mb-6 text-center">
+            <img
+              alt="Parnassus Preparatory Academy crest"
+              className="mx-auto h-24 w-auto object-contain"
+              src="/parnassus-crest.png"
+            />
+            <p className="mt-4 text-sm font-bold uppercase text-[#b58b00]">
+              Family and School Access
+            </p>
+          </div>
+
+          <label className="block text-sm font-bold text-[#17345f]">
             Email
             <input
               autoComplete="email"
-              className="mt-2 w-full rounded-md border border-[#ccb987] px-3 py-2 text-base outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+              className="mt-2 w-full rounded-md border border-[#cfcfcf] px-3 py-2 text-base outline-none transition focus:border-[#17345f] focus:ring-2 focus:ring-[#d4a600]"
               onChange={(event) => setEmail(event.target.value)}
               type="email"
               value={email}
             />
           </label>
-          <label className="block text-sm font-semibold text-[#26385f]">
+          <label className="mt-4 block text-sm font-bold text-[#17345f]">
             Password
             <input
               autoComplete="current-password"
-              className="mt-2 w-full rounded-md border border-[#ccb987] px-3 py-2 text-base outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+              className="mt-2 w-full rounded-md border border-[#cfcfcf] px-3 py-2 text-base outline-none transition focus:border-[#17345f] focus:ring-2 focus:ring-[#d4a600]"
               onChange={(event) => setPassword(event.target.value)}
               type="password"
               value={password}
             />
           </label>
           {message ? (
-            <div className="rounded-md border border-[#d8a828] bg-[#fff8e4] px-3 py-2 text-sm text-[#7a4d00]">
+            <div className="mt-4 rounded-md border border-[#d4a600] bg-[#fff8e1] px-3 py-2 text-sm text-[#6b4d00]">
               {message}
             </div>
           ) : null}
           <button
-            className="w-full rounded-md bg-[#183058] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#102344] disabled:opacity-50"
+            className="mt-5 w-full rounded-md border-2 border-[#d4a600] bg-[#0d4474] px-4 py-3 text-sm font-extrabold uppercase text-white transition hover:bg-[#0a3760] disabled:opacity-50"
             disabled={busy}
             type="submit"
           >
-            Sign in
+            Sign In
           </button>
         </form>
       </section>
@@ -1340,10 +1402,27 @@ function FamilyPortal({
   }
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[360px_1fr]">
+    <>
+      <section className="border-b border-[#e5e5e5] bg-white px-5 py-8 text-center">
+        <p className="text-sm font-normal uppercase text-[#2b2b2b]">
+          Record and review your volunteer hours
+        </p>
+        <div className="mt-1 inline-flex min-h-14 items-center justify-center bg-[#f0f0f0] px-5 text-2xl font-extrabold uppercase text-[#17345f] sm:text-3xl">
+          {family.name}
+        </div>
+        <h1 className="mt-6 text-2xl font-normal uppercase text-black">
+          Volunteering Opportunities
+        </h1>
+        <p className="mx-auto mt-3 max-w-3xl text-base leading-7 text-[#3f3f3f]">
+          Select open positions, track pending hours, and see completed hours
+          after admin sign-off.
+        </p>
+      </section>
+
+      <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[360px_1fr]">
       <aside className="space-y-6">
-        <section className="rounded-lg border border-[#d8c7a0] bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">{family.name}</h2>
+        <section className="rounded-lg border border-[#dedede] bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-extrabold text-[#17345f]">{family.name}</h2>
           <p className="mt-1 text-sm text-[#6f664f]">{family.email}</p>
           <ProgressMeter family={family} />
           <div className="mt-5 grid grid-cols-2 gap-3">
@@ -1501,7 +1580,8 @@ function FamilyPortal({
           </>
         }
       />
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -1521,14 +1601,24 @@ function MetricButton({
       aria-pressed={active}
       className={`min-h-20 rounded-md border p-3 text-left transition ${
         active
-          ? "border-[#183058] bg-[#f4e5bd] shadow-sm"
-          : "border-[#eee4d0] bg-[#fffaf0] hover:border-[#dec071] hover:bg-white"
+          ? "border-[#d4a600] bg-[#17345f] text-white shadow-sm"
+          : "border-[#dedede] bg-white hover:border-[#d4a600] hover:bg-[#fafafa]"
       }`}
       onClick={onClick}
       type="button"
     >
-      <span className="block text-xs font-semibold text-[#6f664f]">{label}</span>
-      <span className="mt-1 block text-2xl font-semibold text-[#14233d]">
+      <span
+        className={`block text-xs font-bold uppercase ${
+          active ? "text-[#f3d45a]" : "text-[#5f5f5f]"
+        }`}
+      >
+        {label}
+      </span>
+      <span
+        className={`mt-1 block text-2xl font-extrabold ${
+          active ? "text-white" : "text-[#17345f]"
+        }`}
+      >
         {value}
       </span>
     </button>
