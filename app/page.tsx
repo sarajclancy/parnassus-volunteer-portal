@@ -4006,6 +4006,7 @@ function PositionAction({
   onClaim,
   onJoinWaitlist,
   onLeaveWaitlist,
+  policySigned = true,
   onRelease,
   onRequestSwap,
   onUpdateSignup,
@@ -4016,6 +4017,7 @@ function PositionAction({
   onClaim?: (positionId: string) => void;
   onJoinWaitlist?: (positionId: string) => void;
   onLeaveWaitlist?: (waitlistId: string) => void;
+  policySigned?: boolean;
   onRelease?: (signupId: string) => void;
   onRequestSwap?: (signupId: string) => void;
   onUpdateSignup?: (signupId: string, update: AdminSignupUpdate) => void;
