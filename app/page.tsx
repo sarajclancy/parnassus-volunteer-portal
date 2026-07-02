@@ -491,12 +491,36 @@ function contactPreferenceLabel(preference: ContactPreference) {
 
 function clearanceLabel(status: ClearanceStatus) {
   const labels = {
-    not_started: "Not started",
-    pending: "Pending",
-    cleared: "Cleared",
+    not_started: "Live Scan needed",
+    pending: "Consent submitted",
+    cleared: "Live Scan verified",
   };
 
   return labels[status];
+}
+
+function VerifiedBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-[#e8f0df] px-2 py-1 text-xs font-extrabold uppercase text-[#2f641f]">
+      <span aria-hidden="true">*</span>
+      <span>VERIFIED</span>
+      <span aria-hidden="true">✓</span>
+    </span>
+  );
+}
+
+function LiveScanConsentDownload({ compact = false }: { compact?: boolean }) {
+  return (
+    <a
+      className={`inline-flex items-center justify-center rounded-md border border-[#ccb987] font-semibold text-[#26385f] transition hover:bg-[#f5ecd8] ${
+        compact ? "px-3 py-1.5 text-sm" : "px-3 py-2 text-sm"
+      }`}
+      download
+      href="/live-scan-consent-form.html"
+    >
+      Download Live Scan consent form
+    </a>
+  );
 }
 
 function familyEmails(family: FamilySummary) {
@@ -1605,6 +1629,7 @@ function AdminToolsPanel({ portal }: { portal: PortalData }) {
         >
           Export event rosters
         </button>
+        <LiveScanConsentDownload />
       </div>
     </section>
   );
@@ -2019,6 +2044,17 @@ function FamilyContactsPanel({
               <p className="mt-2">{family.volunteerInterests.join(", ")}</p>
             ) : null}
           </div>
+          <div className="mt-4 rounded-md border border-[#eee4d0] bg-white p-3">
+            <p className="text-sm font-semibold text-[#26385f]">
+              Live Scan consent is required for each participating family member.
+            </p>
+            <p className="mt-1 text-sm text-[#6f664f]">
+              Download and complete one form for every person listed below.
+            </p>
+            <div className="mt-3">
+              <LiveScanConsentDownload compact />
+            </div>
+          </div>
           <div className="mt-4 divide-y divide-[#eee4d0]">
             {family.members.length === 0 ? (
               <p className="py-4 text-sm text-[#6f664f]">
@@ -2029,6 +2065,7 @@ function FamilyContactsPanel({
                 <div className="py-4" key={member.id}>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">{member.name}</p>
+                    {member.clearanceStatus === "cleared" ? <VerifiedBadge /> : null}
                     <span className="rounded-md bg-[#f4e5bd] px-2 py-1 text-xs font-semibold text-[#102344]">
                       {contactPreferenceLabel(member.preferredContactMethod)}
                     </span>
@@ -2042,6 +2079,9 @@ function FamilyContactsPanel({
                   <p className="mt-1 text-sm text-[#6f664f]">
                     {formatPhoneList(member.phones)}
                   </p>
+                  <div className="mt-2">
+                    <LiveScanConsentDownload compact />
+                  </div>
                 </div>
               ))
             )}
@@ -2049,6 +2089,14 @@ function FamilyContactsPanel({
         </>
       ) : (
         <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
+          <div className="rounded-md border border-[#eee4d0] bg-[#fffaf0] p-3">
+            <p className="text-sm font-semibold text-[#26385f]">
+              Each participating person must complete a Live Scan consent form.
+            </p>
+            <div className="mt-3">
+              <LiveScanConsentDownload compact />
+            </div>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <TextInput
               label="Student name"
@@ -2285,6 +2333,9 @@ function AdminSummaryPanel({
                       <div className="py-3" key={member.id}>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold">{member.name}</p>
+                          {member.clearanceStatus === "cleared" ? (
+                            <VerifiedBadge />
+                          ) : null}
                           <span className="rounded-md bg-[#f4e5bd] px-2 py-1 text-xs font-semibold text-[#102344]">
                             {contactPreferenceLabel(
                               member.preferredContactMethod
@@ -2912,7 +2963,7 @@ function EventForm({
           title: position.title,
           description: position.description,
           hours: draftPositionHours(position, draft.hours),
-          requirements: parseDraftList(position.requirements),
+          requirements: [],
           clearanceRequired: position.clearanceRequired,
           adultOnly: position.adultOnly,
           trainingRequired: position.trainingRequired,
@@ -2962,7 +3013,7 @@ function EventForm({
           onChange={(value) => updateDraft("title", value)}
           value={draft.title}
         />
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_104px] items-end gap-3">
           <SelectInput
             label="Cohort"
             onChange={(value) => updateDraft("cohort", value)}
@@ -2985,7 +3036,7 @@ function EventForm({
             value={String(draft.positions.length)}
           />
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_104px] items-end gap-3">
           <TextInput
             label="Start date"
             onChange={(value) => updateDraft("date", value)}
@@ -3007,7 +3058,7 @@ function EventForm({
             value={draft.hours}
           />
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-2 items-end gap-3">
           <TextInput
             label="Start"
             onChange={(value) => updateDraft("startTime", value)}
@@ -3020,48 +3071,44 @@ function EventForm({
             type="time"
             value={draft.endTime}
           />
-          <TextInput
-            label="Location"
-            onChange={(value) => updateDraft("location", value)}
-            value={draft.location}
+        </div>
+        <TextInput
+          label="Location"
+          onChange={(value) => updateDraft("location", value)}
+          value={draft.location}
+        />
+        <label className="block text-sm font-semibold text-[#26385f]">
+          Description
+          <textarea
+            className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+            onChange={(event) => updateDraft("description", event.target.value)}
+            value={draft.description}
           />
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="block text-sm font-semibold text-[#26385f]">
-            Description
-            <textarea
-              className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-              onChange={(event) => updateDraft("description", event.target.value)}
-              value={draft.description}
-            />
-          </label>
-          <label className="block text-sm font-semibold text-[#26385f]">
-            Instructions
-            <textarea
-              className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-              onChange={(event) => updateDraft("instructions", event.target.value)}
-              value={draft.instructions}
-            />
-          </label>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="block text-sm font-semibold text-[#26385f]">
-            Parking
-            <textarea
-              className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-              onChange={(event) => updateDraft("parkingInfo", event.target.value)}
-              value={draft.parkingInfo}
-            />
-          </label>
-          <label className="block text-sm font-semibold text-[#26385f]">
-            Private admin notes
-            <textarea
-              className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
-              onChange={(event) => updateDraft("privateNotes", event.target.value)}
-              value={draft.privateNotes}
-            />
-          </label>
-        </div>
+        </label>
+        <label className="block text-sm font-semibold text-[#26385f]">
+          Instructions
+          <textarea
+            className="mt-2 min-h-20 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+            onChange={(event) => updateDraft("instructions", event.target.value)}
+            value={draft.instructions}
+          />
+        </label>
+        <label className="block text-sm font-semibold text-[#26385f]">
+          Parking
+          <textarea
+            className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+            onChange={(event) => updateDraft("parkingInfo", event.target.value)}
+            value={draft.parkingInfo}
+          />
+        </label>
+        <label className="block text-sm font-semibold text-[#26385f]">
+          Private admin notes
+          <textarea
+            className="mt-2 min-h-16 w-full resize-y rounded-md border border-[#ccb987] px-3 py-2 text-base font-normal outline-none transition focus:border-[#183058] focus:ring-2 focus:ring-[#dec071]"
+            onChange={(event) => updateDraft("privateNotes", event.target.value)}
+            value={draft.privateNotes}
+          />
+        </label>
 
         {!isEditing ? (
           <div className="grid gap-3 md:grid-cols-2">
@@ -3296,7 +3343,7 @@ function EventForm({
                     value={position.title}
                   />
                   <TextInput
-                    label="Granted hours"
+                    label="Hours"
                     min="0.5"
                     onChange={(value) => updatePosition(index, "hours", value)}
                     placeholder={draft.hours}
@@ -3305,13 +3352,7 @@ function EventForm({
                     value={position.hours}
                   />
                 </div>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                  <TextInput
-                    label="Requirements"
-                    onChange={(value) => updatePosition(index, "requirements", value)}
-                    value={position.requirements}
-                  />
-                  <div className="grid gap-2 self-end sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-3">
                     <label className="flex items-center gap-2 rounded-md border border-[#eee4d0] px-3 py-2 text-sm font-semibold text-[#26385f]">
                       <input
                         checked={position.clearanceRequired}
@@ -3353,7 +3394,6 @@ function EventForm({
                       />
                       Training
                     </label>
-                  </div>
                 </div>
                 <label className="block text-sm font-semibold text-[#26385f]">
                   Position description
